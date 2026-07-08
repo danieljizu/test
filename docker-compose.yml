@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rsp-postgres
+    environment:
+      POSTGRES_DB: redsocialperiferia
+      POSTGRES_USER: rspadmin
+      POSTGRES_PASSWORD: rsp_secure_pass_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./db/02_procedures.sql:/docker-entrypoint-initdb.d/02_procedures.sql
+      - ./db/03_seed.sql:/docker-entrypoint-initdb.d/03_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rspadmin -d redsocialperiferia"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rsp-network
+
+  auth-service:
+    build:
+      context: ./redsocialperiferiaback/auth-service
+      dockerfile: Dockerfile
+    container_name: rsp-auth-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/redsocialperiferia
+      SPRING_DATASOURCE_USERNAME: rspadmin
+      SPRING_DATASOURCE_PASSWORD: rsp_secure_pass_2024
+      JWT_SECRET: redsocialperiferia_jwt_secret_key_2024_super_secure
+      JWT_EXPIRATION_MS: 86400000
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rsp-network
+
+  post-service:
+    build:
+      context: ./redsocialperiferiaback/post-service
+      dockerfile: Dockerfile
+    container_name: rsp-post-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/redsocialperiferia
+      SPRING_DATASOURCE_USERNAME: rspadmin
+      SPRING_DATASOURCE_PASSWORD: rsp_secure_pass_2024
+      JWT_SECRET: redsocialperiferia_jwt_secret_key_2024_super_secure
+      JWT_EXPIRATION_MS: 86400000
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rsp-network
+
+  frontend:
+    build:
+      context: ./redsocialperiferiafront
+      dockerfile: Dockerfile
+    container_name: rsp-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - auth-service
+      - post-service
+    networks:
+      - rsp-network
+
+volumes:
+  postgres_data:
+
+networks:
+  rsp-network:
+    driver: bridge
